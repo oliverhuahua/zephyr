@@ -1,0 +1,969 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zephyr 導覽手冊</title>
+<meta name="description" content="由淺入深認識 Zephyr RTOS：專案全貌、codebase 結構、建置與開機流程、核心機制，以及一般使用者的實際用法。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Noto+Sans+TC:wght@400;500;700;900&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a "datasheet" for an RTOS. Sticky chapter rail on the left (desktop),
+   seven chapters that go from concept to codebase to hands-on usage. */
+:root {
+  --bg: #f2f2f7;
+  --surface: #ffffff;
+  --sunken: #e8e7f0;
+  --ink: #1b1930;
+  --muted: #5c5974;
+  --line: #d6d4e3;
+  --accent: #6b2fd1;      /* Zephyr violet: primary / series 1 */
+  --accent-soft: #ece4fb;
+  --copper: #c0662a;      /* PCB copper: series 2 */
+  --teal: #008f84;        /* series 3 */
+  --idle: #a9a7ba;
+  --code-bg: #1d1b2e;
+  --code-ink: #e7e5f4;
+  --code-kw: #c6a5ff;
+  --code-str: #f0b27a;
+  --code-com: #8d8aa8;
+  --code-fn: #6fd6cc;
+  --f-display: "Chakra Petch", "Noto Sans TC", system-ui, sans-serif;
+  --f-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --r: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12111b; --surface: #1b1a28; --sunken: #232236; --ink: #ebeaf5; --muted: #a29fbd;
+    --line: #302e46; --accent: #9a6bf5; --accent-soft: #2a2245; --copper: #cf7835; --teal: #22a99f;
+    --idle: #5b5975; --code-bg: #0d0c15; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12111b; --surface: #1b1a28; --sunken: #232236; --ink: #ebeaf5; --muted: #a29fbd;
+  --line: #302e46; --accent: #9a6bf5; --accent-soft: #2a2245; --copper: #cf7835; --teal: #22a99f;
+  --idle: #5b5975; --code-bg: #0d0c15; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } *, *::before, *::after { animation: none !important; transition: none !important; } }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--f-body);
+  font-size: 16px; line-height: 1.75; margin: 0;
+}
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+code, kbd, pre { font-family: var(--f-mono); }
+p code, li code, td code, dd code { background: var(--sunken); padding: 1px 6px; border-radius: 4px; font-size: .86em; }
+
+.shell { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 48px; max-width: 1240px; margin: 0 auto; padding-inline: 24px; }
+@media (max-width: 920px) { .shell { grid-template-columns: minmax(0, 1fr); gap: 0; padding-inline: 16px; } }
+
+/* chapter rail */
+.rail { position: sticky; top: env(safe-area-inset-top, 0px); align-self: start; padding-block: 36px; }
+.rail .brand { font-family: var(--f-display); font-weight: 700; font-size: 18px; letter-spacing: .02em; display: flex; align-items: center; gap: 10px; margin-bottom: 24px; }
+.rail .brand svg { flex: none; }
+.rail ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; counter-reset: ch; }
+.rail li a { display: grid; grid-template-columns: 34px 1fr; align-items: baseline; text-decoration: none; color: var(--muted); padding: 6px 10px; border-radius: 8px; font-size: 14.5px; line-height: 1.4; }
+.rail li a span { font-family: var(--f-mono); font-size: 12px; }
+.rail li a:hover { background: var(--sunken); color: var(--ink); }
+.rail li a.on { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+.rail .depth { margin-top: 22px; font-size: 12px; color: var(--muted); letter-spacing: .08em; }
+.rail .depth-bar { margin-top: 6px; height: 6px; border-radius: 3px; background: linear-gradient(90deg, var(--teal), var(--accent), var(--copper)); }
+.rail .depth-lbl { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 4px; }
+@media (max-width: 920px) {
+  .rail { position: sticky; z-index: 5; background: var(--bg); padding-block: 10px; border-bottom: 1px solid var(--line); margin-inline: -16px; padding-inline: 16px; }
+  .rail .brand, .rail .depth, .rail .depth-bar, .rail .depth-lbl { display: none; }
+  .rail ol { display: flex; overflow-x: auto; gap: 4px; scrollbar-width: none; }
+  .rail li a { display: flex; gap: 6px; white-space: nowrap; }
+}
+
+main { padding-block: 36px 80px; min-width: 0; }
+section.ch { padding-block: 56px; border-top: 1px solid var(--line); scroll-margin-top: 60px; }
+section.ch:first-of-type { border-top: 0; padding-top: 8px; }
+.eyebrow { font-family: var(--f-mono); font-size: 12.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--copper); display: flex; gap: 12px; align-items: center; }
+.eyebrow .lv { padding: 1px 8px; border: 1px solid currentColor; border-radius: 99px; }
+h1, h2, h3 { text-wrap: balance; line-height: 1.3; margin: 0; }
+h2 { font-family: var(--f-display); font-size: clamp(26px, 3.4vw, 36px); font-weight: 700; margin-top: 10px; }
+h3 { font-size: 19px; font-weight: 700; margin-top: 34px; margin-bottom: 10px; }
+.lead { font-size: 17.5px; color: var(--muted); max-width: 68ch; margin-top: 12px; }
+.prose { max-width: 70ch; }
+.prose p { margin: 12px 0; }
+
+/* hero */
+.hero { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 40px; align-items: center; }
+@media (max-width: 1080px) { .hero { grid-template-columns: minmax(0, 1fr); } }
+.hero h1 { font-family: var(--f-display); font-size: clamp(38px, 5.6vw, 64px); font-weight: 700; letter-spacing: -.01em; line-height: 1.08; }
+.hero h1 em { font-style: normal; color: var(--accent); }
+.hero .sub { font-size: 19px; color: var(--muted); margin-top: 18px; max-width: 34em; }
+.term { background: var(--code-bg); color: var(--code-ink); border-radius: 12px; font-family: var(--f-mono); font-size: 13.5px; line-height: 1.7; overflow: hidden; border: 1px solid var(--line); }
+.term .bar { display: flex; gap: 6px; padding: 10px 14px; border-bottom: 1px solid #ffffff14; align-items: center; color: var(--code-com); font-size: 12px; }
+.term .bar i { width: 10px; height: 10px; border-radius: 50%; background: #ffffff26; display: block; }
+.term .bar b { margin-left: 8px; font-weight: 400; }
+.term pre { margin: 0; padding: 14px 16px 18px; overflow-x: auto; white-space: pre; }
+.term .p { color: var(--code-fn); }
+.term .c { color: var(--code-com); }
+.term .k { color: var(--code-kw); }
+.term .s { color: var(--code-str); }
+.cursor { display: inline-block; width: 8px; height: 15px; background: var(--code-ink); vertical-align: -2px; animation: blink 1.1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+.facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; margin-top: 36px; }
+@media (max-width: 720px) { .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.fact { background: var(--surface); padding: 16px 18px; }
+.fact b { font-family: var(--f-display); font-size: 30px; font-weight: 700; display: block; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.fact span { font-size: 13.5px; color: var(--muted); }
+.src { font-size: 12.5px; color: var(--muted); margin-top: 8px; font-family: var(--f-mono); }
+
+/* comparison */
+.compare { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 22px; }
+@media (max-width: 820px) { .compare { grid-template-columns: minmax(0, 1fr); } }
+.cmp { border: 1px solid var(--line); border-radius: var(--r); padding: 18px; background: var(--surface); }
+.cmp.me { border: 2px solid var(--accent); }
+.cmp h4 { margin: 0 0 4px; font-size: 16px; }
+.cmp .tag { font-family: var(--f-mono); font-size: 12px; color: var(--muted); }
+.cmp ul { margin: 10px 0 0; padding-left: 18px; font-size: 14.5px; }
+.cmp li { margin: 3px 0; }
+
+.callout { margin-top: 22px; border-left: 3px solid var(--copper); background: var(--surface); padding: 14px 18px; border-radius: 0 var(--r) var(--r) 0; max-width: 72ch; font-size: 15px; }
+.callout b { color: var(--copper); }
+
+/* deadline diagram */
+.figure { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 18px; margin-top: 22px; }
+.figure figcaption, .figcap { font-size: 13.5px; color: var(--muted); margin-top: 10px; }
+.figure .scroll { overflow-x: auto; }
+svg text { font-family: var(--f-body); }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 13.5px; color: var(--muted); margin-bottom: 8px; }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+
+/* repo map */
+.repo { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 20px; margin-top: 22px; align-items: start; }
+@media (max-width: 960px) { .repo { grid-template-columns: minmax(0, 1fr); } }
+.bars { display: grid; gap: 4px; }
+.bar-row { display: grid; grid-template-columns: 84px minmax(0, 1fr) 62px; align-items: center; gap: 10px; background: none; border: 0; padding: 4px 6px; border-radius: 6px; cursor: pointer; color: var(--ink); font: inherit; text-align: left; }
+.bar-row:hover, .bar-row.on { background: var(--sunken); }
+.bar-row .nm { font-family: var(--f-mono); font-size: 13.5px; }
+.bar-row .tr { height: 14px; position: relative; }
+.bar-row .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 0 4px 4px 0; opacity: .82; }
+.bar-row.on .fill { opacity: 1; }
+.bar-row .val { font-family: var(--f-mono); font-size: 12.5px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.bar-row.kern .fill { background: var(--copper); }
+.dir-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 20px; position: sticky; top: 80px; }
+.dir-card h4 { font-family: var(--f-mono); font-size: 20px; margin: 0; color: var(--accent); }
+.dir-card .role { font-weight: 700; margin-top: 4px; }
+.dir-card p { font-size: 15px; margin: 10px 0; }
+.dir-card .peek { font-family: var(--f-mono); font-size: 12.5px; background: var(--sunken); border-radius: 8px; padding: 10px 12px; white-space: pre-wrap; color: var(--muted); }
+
+/* layer stack */
+.stack-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 210px; gap: 14px; margin-top: 22px; }
+@media (max-width: 760px) { .stack-wrap { grid-template-columns: minmax(0, 1fr); } }
+.stack { display: grid; gap: 6px; }
+.layer { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 12px 16px; display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 14px; align-items: center; cursor: pointer; text-align: left; font: inherit; color: var(--ink); width: 100%; }
+@media (max-width: 560px) { .layer { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
+.layer:hover { border-color: var(--accent); }
+.layer.on { border-color: var(--accent); box-shadow: inset 4px 0 0 var(--accent); }
+.layer .ln { font-weight: 700; font-size: 15px; }
+.layer .ln small { display: block; font-family: var(--f-mono); font-weight: 400; color: var(--muted); font-size: 12px; }
+.layer .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-family: var(--f-mono); font-size: 12px; padding: 2px 8px; border-radius: 99px; background: var(--sunken); color: var(--muted); }
+.layer.hw { background: var(--sunken); border-style: dashed; }
+.side { display: grid; gap: 6px; grid-template-rows: 1fr 1fr; }
+.side .layer { grid-template-columns: 1fr; height: 100%; align-content: center; border-color: var(--copper); }
+.side .layer.on { box-shadow: inset 4px 0 0 var(--copper); }
+.layer-detail { margin-top: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px 20px; font-size: 15px; }
+.layer-detail h4 { margin: 0 0 6px; font-size: 16px; }
+.layer-detail p { margin: 6px 0; }
+
+/* pipeline */
+.pipe { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; margin-top: 22px; }
+@media (max-width: 900px) { .pipe { grid-template-columns: minmax(0, 1fr); } }
+.stage { padding: 16px; border: 1px solid var(--line); background: var(--surface); position: relative; cursor: pointer; text-align: left; font: inherit; color: var(--ink); }
+.stage + .stage { border-left: 0; }
+@media (max-width: 900px) { .stage + .stage { border-left: 1px solid var(--line); border-top: 0; } }
+.stage:first-child { border-radius: var(--r) 0 0 var(--r); }
+.stage:last-child { border-radius: 0 var(--r) var(--r) 0; }
+@media (max-width: 900px) { .stage:first-child { border-radius: var(--r) var(--r) 0 0; } .stage:last-child { border-radius: 0 0 var(--r) var(--r); } }
+.stage .n { font-family: var(--f-mono); font-size: 12px; color: var(--copper); }
+.stage .t { font-weight: 700; display: block; margin-top: 2px; }
+.stage .io { font-family: var(--f-mono); font-size: 12px; color: var(--muted); display: block; margin-top: 6px; line-height: 1.5; }
+.stage.on { background: var(--accent-soft); }
+.stage.on .t { color: var(--accent); }
+.stage-detail { margin-top: 12px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 820px) { .stage-detail { grid-template-columns: minmax(0, 1fr); } }
+.stage-detail .txt { font-size: 15px; }
+.stage-detail .txt p { margin: 6px 0; }
+
+/* code blocks */
+.code { background: var(--code-bg); color: var(--code-ink); border-radius: var(--r); position: relative; min-width: 0; }
+.code .fn { font-family: var(--f-mono); font-size: 12px; color: var(--code-com); padding: 8px 14px 0; display: flex; justify-content: space-between; align-items: center; }
+.code pre { margin: 0; padding: 10px 14px 14px; overflow-x: auto; font-size: 13px; line-height: 1.65; }
+.code .k { color: var(--code-kw); } .code .s { color: var(--code-str); } .code .c { color: var(--code-com); } .code .f { color: var(--code-fn); }
+.copy { font: 12px var(--f-mono); background: #ffffff14; color: var(--code-ink); border: 1px solid #ffffff22; border-radius: 6px; padding: 2px 8px; cursor: pointer; }
+.copy:hover { background: #ffffff26; }
+
+/* boot */
+.boot { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; margin-top: 22px; align-items: start; }
+@media (max-width: 860px) { .boot { grid-template-columns: minmax(0, 1fr); } }
+.boot-steps { list-style: none; margin: 0; padding: 0; position: relative; }
+.boot-steps::before { content: ""; position: absolute; left: 13px; top: 10px; bottom: 10px; width: 2px; background: var(--line); }
+.boot-steps li { position: relative; padding-left: 40px; }
+.boot-steps button { all: unset; display: block; cursor: pointer; padding: 7px 10px; border-radius: 8px; width: 100%; box-sizing: border-box; }
+.boot-steps button:hover { background: var(--sunken); }
+.boot-steps button:focus-visible { outline: 2px solid var(--accent); }
+.boot-steps .dot { position: absolute; left: 6px; top: 13px; width: 16px; height: 16px; border-radius: 50%; background: var(--bg); border: 2px solid var(--idle); }
+.boot-steps li.done .dot { background: var(--teal); border-color: var(--teal); }
+.boot-steps li.on .dot { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+.boot-steps .fnm { font-family: var(--f-mono); font-size: 13.5px; font-weight: 600; }
+.boot-steps .ctx { font-size: 12px; color: var(--muted); margin-left: 8px; }
+.boot-steps .bd { font-size: 14px; color: var(--muted); display: block; line-height: 1.5; }
+.boot-panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 18px 20px; position: sticky; top: 80px; }
+.boot-panel h4 { margin: 0; font-family: var(--f-mono); font-size: 16px; color: var(--accent); }
+.boot-panel .where { font-family: var(--f-mono); font-size: 12.5px; color: var(--muted); }
+.boot-panel p { font-size: 15px; margin: 10px 0; }
+.ctrl { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.btn { font: 600 14px var(--f-body); border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 6px 14px; border-radius: 8px; cursor: pointer; }
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn.primary:hover { color: #fff; filter: brightness(1.1); }
+
+/* tables */
+.tbl-wrap { overflow-x: auto; margin-top: 16px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12.5px; letter-spacing: .06em; color: var(--muted); font-weight: 700; background: var(--sunken); }
+tr:last-child td { border-bottom: 0; }
+td.api { font-family: var(--f-mono); font-size: 13px; white-space: nowrap; }
+
+.prio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
+@media (max-width: 720px) { .prio { grid-template-columns: minmax(0, 1fr); } }
+.prio div { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; font-size: 14.5px; }
+.prio b { display: block; font-family: var(--f-mono); font-size: 15px; }
+
+/* dt flow */
+.dtflow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+@media (max-width: 900px) { .dtflow { grid-template-columns: minmax(0, 1fr); } }
+.dtflow .code pre { font-size: 12px; }
+.dtflow .lbl { font-size: 13px; font-weight: 700; margin-bottom: 6px; display: flex; gap: 8px; align-items: baseline; }
+.dtflow .lbl span { font-family: var(--f-mono); color: var(--copper); font-size: 12px; }
+.dtflow > div { min-width: 0; display: flex; flex-direction: column; }
+.dtflow .code { flex: 1; }
+.hl { background: #c6a5ff33; border-radius: 3px; outline: 1px solid #c6a5ff66; }
+
+/* user workflow */
+.flow { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-top: 20px; counter-reset: s; }
+@media (max-width: 1000px) { .flow { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .flow { grid-template-columns: minmax(0, 1fr); } }
+.flow div { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; font-size: 14px; min-width: 0; }
+.flow b { display: block; font-size: 15px; }
+.flow b::before { counter-increment: s; content: counter(s); font-family: var(--f-mono); font-size: 12px; color: #fff; background: var(--accent); width: 20px; height: 20px; border-radius: 50%; display: inline-grid; place-items: center; margin-right: 8px; vertical-align: 1px; }
+.flow code { display: block; margin-top: 8px; font-size: 11.5px; background: var(--sunken); padding: 6px 8px; border-radius: 6px; overflow-x: auto; white-space: nowrap; }
+
+/* example tabs */
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 22px; }
+.tab { font: 600 14px var(--f-body); border: 1px solid var(--line); background: var(--surface); color: var(--muted); padding: 8px 14px; border-radius: 99px; cursor: pointer; }
+.tab[aria-selected="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.ex { margin-top: 16px; display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 20px; }
+@media (max-width: 960px) { .ex { grid-template-columns: minmax(0, 1fr); } }
+.ex .story h4 { margin: 0; font-size: 20px; }
+.ex .story .who { font-size: 13.5px; color: var(--copper); font-family: var(--f-mono); margin-top: 4px; }
+.ex .story p { font-size: 15px; margin: 10px 0; }
+.ex .story ul { font-size: 14.5px; padding-left: 18px; margin: 8px 0; }
+.ex .story li { margin: 4px 0; }
+.ex .codes { display: grid; gap: 10px; min-width: 0; }
+.uses { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+
+.usecases { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+@media (max-width: 900px) { .usecases { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .usecases { grid-template-columns: minmax(0, 1fr); } }
+.usecases div { border-top: 3px solid var(--teal); background: var(--surface); padding: 14px 16px; border-radius: 0 0 var(--r) var(--r); font-size: 14px; }
+.usecases b { display: block; font-size: 15px; margin-bottom: 4px; }
+
+.glossary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 32px; margin-top: 16px; }
+@media (max-width: 720px) { .glossary { grid-template-columns: minmax(0, 1fr); } }
+.glossary dt { font-family: var(--f-mono); font-weight: 600; margin-top: 14px; color: var(--accent); }
+.glossary dd { margin: 2px 0 0; font-size: 14.5px; color: var(--muted); }
+footer { margin-top: 40px; font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 18px; }
+
+.tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--bg); font-size: 13px; padding: 6px 10px; border-radius: 6px; z-index: 20; max-width: 260px; line-height: 1.45; }
+</style>
+
+<div class="shell">
+  <nav class="rail" aria-label="章節">
+    <div class="brand">
+      <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><rect x="1" y="1" width="24" height="24" rx="5" fill="var(--accent)"/><path d="M7 8h12L7 18h12" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Zephyr 導覽手冊
+    </div>
+    <ol id="toc">
+      <li><a href="#what"><span>00</span>什麼是 Zephyr</a></li>
+      <li><a href="#repo"><span>01</span>Codebase 全貌</a></li>
+      <li><a href="#layers"><span>02</span>架構分層</a></li>
+      <li><a href="#build"><span>03</span>建置流程</a></li>
+      <li><a href="#boot"><span>04</span>開機流程</a></li>
+      <li><a href="#kernel"><span>05</span>核心機制</a></li>
+      <li><a href="#dt"><span>06</span>Devicetree 與驅動</a></li>
+      <li><a href="#use"><span>07</span>使用者怎麼用</a></li>
+      <li><a href="#gloss"><span>08</span>名詞速查</a></li>
+    </ol>
+    <div class="depth">閱讀深度</div>
+    <div class="depth-bar"></div>
+    <div class="depth-lbl"><span>概念</span><span>原始碼</span><span>實作</span></div>
+  </nav>
+
+  <main>
+    <!-- 00 -->
+    <section class="ch" id="what">
+      <div class="hero">
+        <div>
+          <div class="eyebrow"><span class="lv">入門</span> Linux Foundation 專案 · Apache-2.0</div>
+          <h1 style="margin-top:14px">給微控制器用的<br><em>即時作業系統</em></h1>
+          <p class="sub">Zephyr 是一個小型、可裁剪、跨硬體的 RTOS。同一份應用程式碼，可以在 Nordic、ST、NXP、Espressif、RISC-V 等上千塊開發板上編譯執行，甚至直接在你的電腦上模擬。</p>
+        </div>
+        <div class="term" aria-label="在 native_sim 上執行 hello_world 的終端機輸出">
+          <div class="bar"><i></i><i></i><i></i><b>~/zephyrproject</b></div>
+<pre><span class="p">$</span> west build -b native_sim zephyr/samples/hello_world
+<span class="c">-- Board: native_sim
+-- Found devicetree overlay: ...
+[142/142] Linking C executable zephyr/zephyr.exe</span>
+<span class="p">$</span> west build -t run
+<span class="k">*** Booting Zephyr OS build v4.4.99 ***</span>
+<span class="s">Hello World! native_sim/native</span>
+<span class="cursor"></span></pre>
+        </div>
+      </div>
+
+      <div class="facts" aria-label="本 repo 的統計">
+        <div class="fact"><b>1,115</b><span>支援的開發板（board.yml）</span></div>
+        <div class="fact"><b>14</b><span>CPU 架構（ARM、RISC-V、x86、Xtensa…）</span></div>
+        <div class="fact"><b>101</b><span>驅動類別（drivers/ 子目錄）</span></div>
+        <div class="fact"><b>4,277</b><span>Devicetree binding 定義</span></div>
+      </div>
+      <div class="src">數據來源：本 repo（VERSION 4.4.99）以 find / grep 實際統計</div>
+
+      <h3>先搞懂：RTOS 是什麼？跟 Linux 差在哪？</h3>
+      <div class="prose">
+        <p>RTOS（Real-Time Operating System，即時作業系統）的重點不是「快」，而是<b>可預測</b>：一件事情必須在規定的時間內完成，晚一點就算失敗。例如馬達控制要在 1 ms 內更新、心律裝置必須準時取樣。</p>
+        <p>微控制器（MCU）通常只有幾十 KB 的 RAM、沒有 MMU、沒有硬碟。Linux 跑不起來，而直接寫裸機（bare-metal）程式又很難管理多工、通訊協定與驅動。Zephyr 就落在這兩者之間。</p>
+      </div>
+
+      <div class="compare">
+        <div class="cmp">
+          <h4>裸機 Bare-metal</h4>
+          <div class="tag">while(1) 超級迴圈</div>
+          <ul><li>最省資源</li><li>沒有執行緒、沒有排程</li><li>換一顆晶片，驅動幾乎全部重寫</li><li>藍牙、網路堆疊要自己整合</li></ul>
+        </div>
+        <div class="cmp me">
+          <h4>Zephyr RTOS</h4>
+          <div class="tag">最小約 8 KB Flash 起跳</div>
+          <ul><li>搶佔式多執行緒、確定性排程</li><li>統一的驅動 API + Devicetree，換板子只改設定</li><li>內建 BLE、TCP/IP、USB、檔案系統、Shell</li><li>用 Kconfig 精準裁掉不需要的功能</li></ul>
+        </div>
+        <div class="cmp">
+          <h4>嵌入式 Linux</h4>
+          <div class="tag">通常需數十 MB RAM</div>
+          <ul><li>功能完整、生態系龐大</li><li>需要 MMU 與外部記憶體</li><li>開機數秒</li><li>即時性需額外修補（PREEMPT_RT）</li></ul>
+        </div>
+      </div>
+
+      <figure class="figure" style="margin-inline:0">
+        <div class="legend"><span><i style="background:var(--teal)"></i>在時限內完成</span><span><i style="background:var(--copper)"></i>超過時限</span></div>
+        <div class="scroll">
+        <svg viewBox="0 0 720 150" width="100%" style="min-width:560px" role="img" aria-label="即時性示意：RTOS 每次反應時間穩定落在時限內，一般系統偶爾超過時限">
+          <line x1="120" y1="20" x2="120" y2="130" stroke="var(--line)"/>
+          <text x="110" y="52" text-anchor="end" font-size="13" fill="var(--ink)">RTOS</text>
+          <text x="110" y="107" text-anchor="end" font-size="13" fill="var(--ink)">通用系統</text>
+          <g id="dlBars"></g>
+          <line x1="560" y1="18" x2="560" y2="132" stroke="var(--ink)" stroke-dasharray="4 4"/>
+          <text x="566" y="30" font-size="12" fill="var(--muted)">時限 deadline</text>
+          <text x="120" y="146" font-size="12" fill="var(--muted)">0</text>
+          <text x="560" y="146" font-size="12" fill="var(--muted)" text-anchor="middle">1 ms</text>
+          <text x="700" y="146" font-size="12" fill="var(--muted)" text-anchor="end">反應時間 →</text>
+        </svg>
+        </div>
+        <figcaption>每一條細線代表一次「事件發生 → 程式反應」的延遲（示意數據）。RTOS 的價值在於最壞情況也在時限內；平均值好看但偶爾爆表的系統，在即時場景中是不合格的。</figcaption>
+      </figure>
+    </section>
+
+    <!-- 01 -->
+    <section class="ch" id="repo">
+      <div class="eyebrow"><span class="lv">入門</span> 01 · Codebase 全貌</div>
+      <h2>打開 repo，先看哪裡？</h2>
+      <p class="lead">核心（kernel/）只佔 92 個檔案。整個 repo 的大部分是「讓同一個核心能跑在上千種硬體上」的板子定義、驅動、Devicetree 和測試。點選左側長條看每個目錄的角色。</p>
+      <div class="repo">
+        <div>
+          <div class="bars" id="bars" role="list"></div>
+          <div class="figcap">每個頂層目錄的檔案數（所有類型）。銅色＝核心。</div>
+        </div>
+        <aside class="dir-card" id="dirCard" aria-live="polite"></aside>
+      </div>
+      <div class="callout"><b>閱讀心法：</b>Zephyr 的程式碼很多，但大多是「平行的同類物」：一千多塊板子、上百種驅動類別。只要讀懂一塊板子、一種驅動、一個 sample，其餘都是同一個模式的重複。</div>
+    </section>
+
+    <!-- 02 -->
+    <section class="ch" id="layers">
+      <div class="eyebrow"><span class="lv">進階</span> 02 · 架構分層</div>
+      <h2>從硬體到 main()，一層一層往上疊</h2>
+      <p class="lead">Zephyr 是一個「單一映像檔」系統：應用程式、核心、驅動在編譯時被靜態連結成一個 <code>zephyr.elf</code>。右側的 Kconfig 與 Devicetree 不是執行期的層，而是在編譯期決定每一層長什麼樣子。</p>
+      <div class="stack-wrap">
+        <div class="stack" id="stack"></div>
+        <div class="side" id="side"></div>
+      </div>
+      <div class="layer-detail" id="layerDetail" aria-live="polite"></div>
+    </section>
+
+    <!-- 03 -->
+    <section class="ch" id="build">
+      <div class="eyebrow"><span class="lv">進階</span> 03 · 建置流程</div>
+      <h2><code style="font-size:.85em">west build</code> 背後發生了什麼</h2>
+      <p class="lead">Zephyr 的建置系統是 CMake，但在編譯 C 之前，會先跑兩套「設定語言」把板子與功能變成標頭檔。這是 Zephyr 與一般 C 專案最不同的地方。點選每個階段看細節。</p>
+      <div class="pipe" id="pipe"></div>
+      <div class="stage-detail" id="stageDetail" aria-live="polite"></div>
+    </section>
+
+    <!-- 04 -->
+    <section class="ch" id="boot">
+      <div class="eyebrow"><span class="lv">深入</span> 04 · 開機流程 · kernel/init.c</div>
+      <h2>從按下 Reset 到你的 main()</h2>
+      <p class="lead">開機過程是讀懂 Zephyr 的最佳路線：它會依序經過架構層、核心初始化、驅動初始化，最後才交棒給應用程式。按「下一步」逐格播放。</p>
+      <div class="boot">
+        <div>
+          <ol class="boot-steps" id="bootSteps"></ol>
+          <div class="ctrl">
+            <button class="btn" id="bootPrev">上一步</button>
+            <button class="btn primary" id="bootNext">下一步</button>
+            <button class="btn" id="bootPlay">自動播放</button>
+          </div>
+        </div>
+        <div class="boot-panel" id="bootPanel" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <!-- 05 -->
+    <section class="ch" id="kernel">
+      <div class="eyebrow"><span class="lv">深入</span> 05 · 核心機制 · kernel/</div>
+      <h2>執行緒、優先權與搶佔</h2>
+      <p class="lead">Zephyr 的排程器（<code>kernel/sched.c</code>）永遠讓「已就緒、優先權最高」的執行緒執行。數字越小，優先權越高。</p>
+      <div class="prio">
+        <div><b>負數：協作式 cooperative</b>一旦開始執行，不會被其他執行緒搶走 CPU，直到它自己 sleep、等待或 <code>k_yield()</code>。適合不可被打斷的協定處理。</div>
+        <div><b>0 以上：搶佔式 preemptible</b>更高優先權的執行緒一就緒，就立刻搶走 CPU。<code>main()</code> 預設在優先權 0 執行。</div>
+        <div><b>ISR：中斷服務程序</b>不屬於執行緒，硬體中斷會打斷任何執行緒。ISR 要短，通常只是 <code>k_sem_give()</code> 喚醒工作執行緒。</div>
+      </div>
+
+      <figure class="figure" style="margin-inline:0">
+        <div class="legend">
+          <span><i style="background:var(--copper)"></i>ISR（按鈕中斷）</span>
+          <span><i style="background:var(--accent)"></i>sensor_thread · prio 2</span>
+          <span><i style="background:var(--teal)"></i>log_thread · prio 7</span>
+          <span><i style="background:var(--idle)"></i>idle · 最低</span>
+        </div>
+        <div class="scroll">
+        <svg id="gantt" viewBox="0 0 720 230" width="100%" style="min-width:600px" role="img" aria-label="排程時間軸：低優先權執行緒被 ISR 與高優先權執行緒搶佔的過程"></svg>
+        </div>
+        <figcaption>排程示意（10 ms）：log_thread 在跑時，按鈕中斷在 3 ms 觸發；ISR 呼叫 <code>k_sem_give()</code>，正在 <code>k_sem_take()</code> 等待的 sensor_thread 立刻搶佔；它處理完再度等待，log_thread 才接著跑。把滑鼠移到色塊上看說明。</figcaption>
+      </figure>
+
+      <h3>執行緒之間怎麼溝通：核心物件一覽</h3>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>物件</th><th>代表 API</th><th>用途</th><th>原始碼</th></tr></thead>
+          <tbody>
+            <tr><td>Thread</td><td class="api">K_THREAD_DEFINE / k_thread_create</td><td>建立執行緒（可在編譯期靜態定義）</td><td class="api">kernel/thread.c</td></tr>
+            <tr><td>Semaphore</td><td class="api">k_sem_give / k_sem_take</td><td>事件通知、計數資源；ISR 可 give</td><td class="api">kernel/sem.c</td></tr>
+            <tr><td>Mutex</td><td class="api">k_mutex_lock / unlock</td><td>保護共用資源，含優先權繼承避免反轉</td><td class="api">kernel/mutex.c</td></tr>
+            <tr><td>Message Queue</td><td class="api">k_msgq_put / k_msgq_get</td><td>固定大小資料的佇列，生產者／消費者</td><td class="api">kernel/msg_q.c</td></tr>
+            <tr><td>FIFO / Queue</td><td class="api">k_fifo_put / k_fifo_get</td><td>零複製傳遞不定長資料</td><td class="api">kernel/queue.c</td></tr>
+            <tr><td>Event</td><td class="api">k_event_post / k_event_wait</td><td>多個旗標組合等待</td><td class="api">kernel/events.c</td></tr>
+            <tr><td>Work Queue</td><td class="api">k_work_submit</td><td>把工作從 ISR 推遲到執行緒中處理</td><td class="api">kernel/work.c</td></tr>
+            <tr><td>Timer</td><td class="api">k_timer_start</td><td>週期或單次計時回呼</td><td class="api">kernel/timer.c</td></tr>
+            <tr><td>Memory Slab / Heap</td><td class="api">k_mem_slab_alloc / k_malloc</td><td>固定區塊或可變大小的記憶體配置</td><td class="api">kernel/mem_slab.c, kheap.c</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout"><b>延伸閱讀：</b>啟用 <code>CONFIG_USERSPACE</code> 後，執行緒可以跑在使用者模式，透過系統呼叫（<code>kernel/userspace/</code>）存取核心物件，並由 MPU/MMU 做記憶體隔離。這是 Zephyr 相較許多小型 RTOS 的安全優勢。</div>
+    </section>
+
+    <!-- 06 -->
+    <section class="ch" id="dt">
+      <div class="eyebrow"><span class="lv">深入</span> 06 · Devicetree 與裝置模型</div>
+      <h2>為什麼同一份 Blinky 能在上千塊板子上跑？</h2>
+      <p class="lead">答案是：程式碼裡沒有寫任何腳位號碼。硬體資訊寫在 Devicetree，編譯時被轉成巨集；驅動透過統一 API 結構體提供功能。以下追蹤 <code>led0</code> 從板子描述一路到你的程式。</p>
+      <div class="dtflow">
+        <div>
+          <div class="lbl"><span>①</span>板子的 .dts 描述硬體</div>
+          <div class="code"><div class="fn">boards/nordic/nrf52840dk/…dts</div><pre><span class="k">aliases</span> {
+  <span class="hl">led0</span> = &amp;led0;
+};
+leds {
+  compatible = <span class="s">"gpio-leds"</span>;
+  led0: led_0 {
+    gpios = &lt;&amp;gpio0 <span class="hl">13</span>
+      GPIO_ACTIVE_LOW&gt;;
+  };
+};</pre></div>
+        </div>
+        <div>
+          <div class="lbl"><span>②</span>編譯期產生巨集</div>
+          <div class="code"><div class="fn">build/…/devicetree_generated.h</div><pre><span class="c">/* scripts/dts/gen_defines.py 產生 */</span>
+#define DT_N_ALIAS_led0 \
+  DT_N_S_leds_S_led_0
+#define DT_N_S_leds_S_led_0_P_gpios_IDX_0_VAL_pin <span class="hl">13</span>
+...</pre></div>
+        </div>
+        <div>
+          <div class="lbl"><span>③</span>應用程式只寫別名</div>
+          <div class="code"><div class="fn">samples/basic/blinky/src/main.c</div><pre>#define LED0_NODE \
+  DT_ALIAS(<span class="hl">led0</span>)
+
+<span class="k">static const struct</span> gpio_dt_spec led =
+  GPIO_DT_SPEC_GET(LED0_NODE,
+                   gpios);
+
+<span class="f">gpio_pin_toggle_dt</span>(&amp;led);</pre></div>
+        </div>
+        <div>
+          <div class="lbl"><span>④</span>驅動實作 API</div>
+          <div class="code"><div class="fn">drivers/gpio/gpio_nrfx.c</div><pre><span class="k">static</span> DEVICE_API(gpio,
+  gpio_nrfx_drv_api_funcs) = {
+  .port_toggle_bits =
+    gpio_nrfx_port_toggle_bits,
+  ...
+};
+DEVICE_DT_INST_DEFINE(id,
+  gpio_nrfx_init, ...,
+  PRE_KERNEL_1, ...);</pre></div>
+        </div>
+      </div>
+      <div class="callout"><b>關鍵觀念：</b>換到 STM32 板子時，①和④換成 ST 的檔案，②自動重新產生，③你的 main.c 一行都不用改。這就是 <code>include/zephyr/drivers/*.h</code> 統一 API 與 <code>dts/bindings/</code> 4,277 個 binding 存在的理由。</div>
+      <h3>Kconfig：決定「編進哪些功能」</h3>
+      <div class="prose">
+        <p>Devicetree 描述「有什麼硬體」，Kconfig 描述「要開哪些軟體功能」。repo 中共有約 2.9 萬個 <code>config</code> 選項。應用程式用一個 <code>prj.conf</code> 檔開關功能，沒開的程式碼完全不會被編譯，這就是 Zephyr 能縮到很小的原因。用 <code>west build -t menuconfig</code> 可以互動瀏覽所有選項。</p>
+      </div>
+    </section>
+
+    <!-- 07 -->
+    <section class="ch" id="use">
+      <div class="eyebrow"><span class="lv">實作</span> 07 · 一般使用者怎麼用</div>
+      <h2>從安裝到燒錄，六個步驟</h2>
+      <p class="lead">一般開發者不會修改 Zephyr 本身，而是把它當作 SDK：建立自己的應用程式資料夾，裡面只有 <code>CMakeLists.txt</code>、<code>prj.conf</code>、<code>src/main.c</code>，必要時加一個 <code>.overlay</code> 調整硬體設定。</p>
+      <div class="flow">
+        <div><b>安裝工具</b>Python、CMake、Ninja、Device Tree Compiler，以及 west<code>pip install west</code></div>
+        <div><b>建立工作區</b>下載 Zephyr 與 HAL 模組<code>west init ~/zephyrproject<br>cd ~/zephyrproject && west update</code></div>
+        <div><b>安裝 SDK</b>各架構的交叉編譯器<code>west sdk install</code></div>
+        <div><b>編譯</b>用 -b 指定板子<code>west build -b nrf52840dk/nrf52840 app</code></div>
+        <div><b>燒錄</b>透過 J-Link、OpenOCD、pyOCD 等<code>west flash</code></div>
+        <div><b>除錯與觀察</b>序列埠 log、Shell、GDB<code>west debug</code></div>
+      </div>
+
+      <h3>四個典型例子</h3>
+      <p class="prose" style="color:var(--muted);margin:0">以下例子由簡到繁，都可以在 <code>samples/</code> 找到對應的官方範例。</p>
+      <div class="tabs" role="tablist" id="tabs"></div>
+      <div id="exPanels"></div>
+
+      <h3>真實世界的應用場景</h3>
+      <div class="usecases">
+        <div><b>穿戴裝置</b>智慧手錶、健康手環：BLE 連手機、低功耗管理（subsys/pm）、感測器融合。</div>
+        <div><b>工業物聯網</b>感測節點：Modbus、CAN bus、LwM2M／MQTT 上雲、看門狗確保長期運作。</div>
+        <div><b>智慧家庭</b>Matter / Thread 裝置：OpenThread、IEEE 802.15.4、OTA 韌體更新（MCUboot + mcumgr）。</div>
+        <div><b>主處理器的協處理器</b>在大型 SoC 中跑即時任務，透過 IPC（subsys/ipc）與 Linux 溝通。</div>
+      </div>
+    </section>
+
+    <!-- 08 -->
+    <section class="ch" id="gloss">
+      <div class="eyebrow"><span class="lv">附錄</span> 08 · 名詞速查</div>
+      <h2>看到這些詞時</h2>
+      <dl class="glossary">
+        <div><dt>west</dt><dd>Zephyr 的命令列工具：管理多 repo 工作區（west.yml）、編譯、燒錄、除錯。</dd></div>
+        <div><dt>Board / SoC</dt><dd>板子（boards/）描述一塊實體電路板；SoC（soc/）描述上面的晶片。板子名稱格式如 <code>nrf52840dk/nrf52840</code>。</dd></div>
+        <div><dt>Devicetree</dt><dd>描述硬體的資料格式。.dts 描述板子，.overlay 讓應用程式覆寫設定，bindings 定義每種裝置可用的屬性。</dd></div>
+        <div><dt>Kconfig</dt><dd>來自 Linux 的功能設定系統。prj.conf 開關功能，產生 autoconf.h。</dd></div>
+        <div><dt>Module</dt><dd>不在主 repo 的外部程式庫（HAL、mbedTLS、LVGL…），透過 west.yml 引入，目前列出 82 個專案。</dd></div>
+        <div><dt>Sysbuild</dt><dd>一次建置多個映像，例如 MCUboot bootloader + 應用程式，或多核心晶片的每個核心。</dd></div>
+        <div><dt>Twister</dt><dd>測試執行器，自動在多個平台上編譯並執行 tests/ 與 samples/。</dd></div>
+        <div><dt>native_sim</dt><dd>把 Zephyr 編譯成 Linux 執行檔的「板子」，不需要硬體就能開發與測試。</dd></div>
+        <div><dt>Snippet / Shield</dt><dd>Snippet 是可重複使用的設定片段（如切換 console）；Shield 是外接擴充板的 Devicetree 描述。</dd></div>
+        <div><dt>LTS</dt><dd>長期支援版本，產品開發通常選 LTS 以獲得長時間的安全修補。</dd></div>
+      </dl>
+      <footer>本頁內容依據 <code>oliverhuahua/zephyr</code> 的原始碼樹（VERSION 4.4.99）整理。統計數字為實際計算；延遲圖與排程圖為示意。官方文件：<a href="https://docs.zephyrproject.org/latest/" target="_blank" rel="noopener">docs.zephyrproject.org</a></footer>
+    </section>
+  </main>
+</div>
+
+<div class="tip" id="tip" hidden></div>
+
+<script>
+(function () {
+  const $ = (s, r = document) => r.querySelector(s);
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const tip = $('#tip');
+  function showTip(e, html) { tip.innerHTML = html; tip.hidden = false; moveTip(e); }
+  function moveTip(e) { const x = Math.min(e.clientX + 14, innerWidth - 270); tip.style.left = x + 'px'; tip.style.top = (e.clientY + 14) + 'px'; }
+  function hideTip() { tip.hidden = true; }
+
+  /* ---------- deadline strip ---------- */
+  (function () {
+    const g = $('#dlBars');
+    const x0 = 120, w = 440; // 0..1ms maps to 120..560
+    const rtos = [.62, .64, .63, .66, .61, .65, .63, .64, .62, .66, .63, .65];
+    const gp = [.30, .42, .35, 1.18, .38, .33, .45, .40, 1.27, .36, .31, .44];
+    function strip(vals, y) {
+      vals.forEach((v, i) => {
+        const x = x0 + v * w;
+        const late = v > 1;
+        const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        l.setAttribute('x1', x); l.setAttribute('x2', x);
+        l.setAttribute('y1', y - 14); l.setAttribute('y2', y + 14);
+        l.setAttribute('stroke', late ? 'var(--copper)' : 'var(--teal)');
+        l.setAttribute('stroke-width', late ? 3 : 2);
+        g.appendChild(l);
+      });
+    }
+    strip(rtos, 48); strip(gp, 103);
+  })();
+
+  /* ---------- repo map ---------- */
+  const dirs = [
+    ['boards', 16272, '開發板定義', '每塊板子一個資料夾：.dts 描述板上元件與腳位、_defconfig 預設設定、board.yml 名稱與 SoC、燒錄設定。共 185 個廠商目錄、1,115 塊板子。', 'boards/nordic/nrf52840dk/\n  board.yml\n  nrf52840dk_nrf52840.dts\n  nrf52840dk_nrf52840_defconfig\n  board.cmake'],
+    ['tests', 15075, '測試', 'Ztest 單元／整合測試，由 Twister 在 CI 中跨平台執行。kernel/、drivers/、net/、bluetooth/ 等分類對應原始碼目錄。', 'tests/kernel/semaphore/\n  src/main.c\n  prj.conf\n  testcase.yaml'],
+    ['samples', 7922, '官方範例', '新手最好的入口。從 hello_world、basic/blinky 到 bluetooth、net、sensor、shell。每個都是一個可獨立編譯的應用程式。', 'samples/basic/blinky/\n  CMakeLists.txt\n  prj.conf\n  src/main.c'],
+    ['drivers', 7215, '裝置驅動', '101 個驅動類別（gpio、i2c、spi、serial、sensor、display、ethernet…）。每個類別下有各廠商實作，共用 include/zephyr/drivers/ 中的統一 API。', 'drivers/i2c/\n  i2c_nrfx_twim.c\n  i2c_ll_stm32.c\n  i2c_esp32.c\n  Kconfig.*'],
+    ['dts', 7026, 'Devicetree', 'dts/bindings/ 有 4,277 個 YAML binding 定義裝置屬性；dts/arm、dts/riscv 等存放 SoC 層級的 .dtsi。', 'dts/bindings/sensor/\n  bosch,bme280.yaml\ndts/arm/st/f4/stm32f4.dtsi'],
+    ['soc', 4407, '晶片支援', '60 個廠商的 SoC 層：時脈、記憶體配置、啟動前的晶片初始化、linker 設定。', 'soc/nordic/nrf52/\n  soc.c\n  Kconfig.soc'],
+    ['subsys', 2563, '子系統', '中介軟體：bluetooth、net、usb、fs、logging、shell、settings、pm（電源管理）、dfu、mgmt（mcumgr）、zbus 等。', 'subsys/bluetooth/host/\nsubsys/net/ip/\nsubsys/shell/\nsubsys/logging/'],
+    ['include', 2247, '公開標頭', 'include/zephyr/ 是對外 API：kernel.h、drivers/*.h、net/*.h、bluetooth/*.h、devicetree.h。應用程式只應 include 這裡。', 'include/zephyr/\n  kernel.h\n  device.h\n  devicetree.h\n  drivers/gpio.h'],
+    ['doc', 1214, '文件', 'Sphinx（reStructuredText）原始檔，發佈為 docs.zephyrproject.org。', 'doc/kernel/\ndoc/develop/\ndoc/contribute/'],
+    ['scripts', 881, '工具腳本', 'west 擴充指令、Devicetree 轉換（scripts/dts）、Kconfig、Twister、checkpatch 與 CI 合規檢查。', 'scripts/west_commands/\nscripts/dts/gen_defines.py\nscripts/twister'],
+    ['arch', 593, 'CPU 架構層', '14 種架構：arm、arm64、riscv、x86、xtensa、arc、posix（native_sim）等。負責上下文切換、中斷進入點、MPU/MMU、開機組語。', 'arch/arm/core/cortex_m/\n  reset.S\n  swap_helper.S\n  prep_c.c'],
+    ['modules', 497, '模組整合', '外部模組（HAL、mbedTLS、LVGL、TF-M…）的 Kconfig 與 CMake 黏合層；實際原始碼由 west update 下載到工作區。', 'modules/hal_nordic/\nmodules/mbedtls/\nmodules/lvgl/'],
+    ['cmake', 278, '建置系統', 'find_package(Zephyr) 的實作：boards.cmake、dts.cmake、kconfig.cmake 等模組串起整個建置。', 'cmake/modules/\n  dts.cmake\n  kconfig.cmake\n  extensions.cmake'],
+    ['lib', 245, '基礎函式庫', 'libc 選擇（picolibc、minimal）、os 工具、heap、smf（狀態機框架）、net_buf。', 'lib/libc/\nlib/smf/\nlib/os/'],
+    ['kernel', 92, '核心', '整個 RTOS 的心臟，只有 92 個檔案：排程器、執行緒、同步物件、計時器、記憶體管理、系統呼叫。', 'kernel/\n  init.c   sched.c\n  thread.c sem.c\n  mutex.c  timeout.c']
+  ];
+  const max = dirs[0][1];
+  const bars = $('#bars');
+  function showDir(i) {
+    const d = dirs[i];
+    bars.querySelectorAll('.bar-row').forEach((b, j) => { b.classList.toggle('on', j === i); b.setAttribute('aria-pressed', j === i); });
+    $('#dirCard').innerHTML = `<h4>${d[0]}/</h4><div class="role">${d[2]} · ${d[1].toLocaleString()} 個檔案</div><p>${d[3]}</p><div class="peek">${esc(d[4])}</div>`;
+  }
+  dirs.forEach((d, i) => {
+    const b = document.createElement('button');
+    b.className = 'bar-row' + (d[0] === 'kernel' ? ' kern' : '');
+    b.setAttribute('role', 'listitem');
+    b.innerHTML = `<span class="nm">${d[0]}/</span><span class="tr"><span class="fill" style="width:${Math.max(d[1] / max * 100, .8)}%"></span></span><span class="val">${d[1].toLocaleString()}</span>`;
+    b.addEventListener('click', () => showDir(i));
+    b.addEventListener('mouseenter', e => showTip(e, `<b>${d[0]}/</b> · ${d[1].toLocaleString()} 檔案<br>${d[2]}`));
+    b.addEventListener('mousemove', moveTip);
+    b.addEventListener('mouseleave', hideTip);
+    bars.appendChild(b);
+  });
+  showDir(dirs.length - 1);
+
+  /* ---------- layers ---------- */
+  const layers = [
+    { n: '你的應用程式', p: 'app/src/main.c', c: ['main()', 'prj.conf', 'app.overlay'], d: '只需要 include <code>&lt;zephyr/kernel.h&gt;</code> 與需要的驅動 API 標頭。<code>main()</code> 本身就是一個執行緒，也可以用 <code>K_THREAD_DEFINE</code> 建立更多執行緒。' },
+    { n: '子系統', p: 'subsys/', c: ['bluetooth', 'net', 'usb', 'fs', 'shell', 'logging', 'settings', 'pm', 'dfu', 'zbus'], d: '可選用的中介軟體。藍牙主機堆疊、IPv4/IPv6 + sockets、USB device/host、LittleFS/FAT、互動式 Shell、非同步 logging、電源管理、韌體更新。全部由 Kconfig 開關。' },
+    { n: '裝置驅動模型', p: 'drivers/ + include/zephyr/drivers', c: ['gpio', 'i2c', 'spi', 'uart', 'sensor', 'display', 'adc', 'pwm', '…101 類'], d: '每個驅動用 <code>DEVICE_DT_DEFINE()</code> 在編譯期註冊成 <code>struct device</code>，包含 config（唯讀）、data（執行期狀態）、api（函式指標表）。應用程式透過 <code>DEVICE_DT_GET()</code> 拿到裝置，不需要執行期查找。' },
+    { n: '核心 Kernel', p: 'kernel/', c: ['scheduler', 'threads', 'sem/mutex', 'msgq', 'timers', 'work queue', 'userspace'], d: '與硬體無關的 RTOS 核心：排程、同步、計時、記憶體。透過 <code>arch_*</code> 介面呼叫下一層完成上下文切換。' },
+    { n: '架構層 Arch', p: 'arch/ + soc/', c: ['context switch', 'IRQ', 'MPU/MMU', 'reset.S', 'SMP'], d: '每種 CPU 架構實作同一組介面：開機組語、中斷向量、例外處理、執行緒切換（如 ARM Cortex-M 的 PendSV）。soc/ 再補上晶片專屬的初始化。' },
+    { n: '硬體', p: 'MCU / SoC / 外設', c: ['Cortex-M', 'RISC-V', 'Xtensa', 'x86'], d: '實際的晶片。若用 <code>native_sim</code>，這一層換成你的 Linux 主機，Zephyr 會被編成一般的可執行檔。', hw: true }
+  ];
+  const sides = [
+    { n: 'Kconfig', p: 'Kconfig* · prj.conf', d: '軟體功能設定。約 2.9 萬個選項，決定每一層「要編進哪些程式碼」。輸出 <code>autoconf.h</code> 與 <code>.config</code>。' },
+    { n: 'Devicetree', p: 'dts/ · *.dts · *.overlay', d: '硬體描述。告訴驅動層「板上有哪些裝置、接在哪個腳位、什麼位址」。輸出 <code>devicetree_generated.h</code>。' }
+  ];
+  const stack = $('#stack'), side = $('#side'), det = $('#layerDetail');
+  const allLayerBtns = [];
+  function pickLayer(btn, obj) {
+    allLayerBtns.forEach(b => b.classList.remove('on')); btn.classList.add('on');
+    det.innerHTML = `<h4>${obj.n} <code>${obj.p}</code></h4><p>${obj.d}</p>`;
+  }
+  layers.forEach(l => {
+    const b = document.createElement('button');
+    b.className = 'layer' + (l.hw ? ' hw' : '');
+    b.innerHTML = `<span class="ln">${l.n}<small>${l.p}</small></span><span class="chips">${l.c.map(c => `<span class="chip">${c}</span>`).join('')}</span>`;
+    b.addEventListener('click', () => pickLayer(b, l));
+    stack.appendChild(b); allLayerBtns.push(b);
+  });
+  sides.forEach(s => {
+    const b = document.createElement('button');
+    b.className = 'layer';
+    b.innerHTML = `<span class="ln">${s.n}<small>${s.p}</small></span><span style="font-size:13px;color:var(--muted)">編譯期設定 ↔ 影響所有層</span>`;
+    b.addEventListener('click', () => pickLayer(b, s));
+    side.appendChild(b); allLayerBtns.push(b);
+  });
+  pickLayer(allLayerBtns[2], layers[2]);
+
+  /* ---------- code helper ---------- */
+  function hl(src, lang) {
+    let s = esc(src);
+    if (lang === 'c') {
+      s = s.replace(/(\/\*[\s\S]*?\*\/)/g, '<span class="c">$1</span>')
+           .replace(/("[^"\n]*")/g, '<span class="s">$1</span>')
+           .replace(/\b(static|const|struct|int|void|while|if|return|for|bool|uint8_t|int32_t|char|true|false)\b/g, '<span class="k">$1</span>')
+           .replace(/\b(k_[a-z_]+|gpio_[a-z_]+|sensor_[a-z_]+|bt_[a-z_]+|printk|printf|device_is_ready|shell_print)\b(?=\()/g, '<span class="f">$1</span>');
+    } else {
+      s = s.replace(/^(#.*)$/gm, '<span class="c">$1</span>').replace(/^(\$)/gm, '<span class="f">$1</span>');
+    }
+    return s;
+  }
+  function codeBlock(name, src, lang) {
+    return `<div class="code"><div class="fn"><span>${name}</span><button class="copy" type="button">複製</button></div><pre>${hl(src, lang)}</pre></div>`;
+  }
+  document.addEventListener('click', e => {
+    const b = e.target.closest('.copy'); if (!b) return;
+    const pre = b.closest('.code').querySelector('pre');
+    const done = () => { b.textContent = '已複製'; setTimeout(() => b.textContent = '複製', 1400); };
+    try {
+      navigator.clipboard.writeText(pre.innerText).then(done, () => selectPre(pre));
+    } catch (_) { selectPre(pre); }
+  });
+  function selectPre(pre) { const r = document.createRange(); r.selectNodeContents(pre); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+
+  /* ---------- pipeline ---------- */
+  const stages = [
+    { t: '解析板子', io: '-b board\n→ boards/, soc/', d: '<p><code>cmake/modules/boards.cmake</code> 依 <code>-b nrf52840dk/nrf52840</code> 找到板子目錄，讀 <code>board.yml</code> 決定 SoC 與架構。</p><p>同時收集 snippets、shields 等額外設定。</p>', f: 'build.sh', l: 'sh', s: '$ west build -b nrf52840dk/nrf52840 \\\n    samples/basic/blinky\n# 等同於：\n$ cmake -GNinja -Bbuild -DBOARD=nrf52840dk/nrf52840 \\\n    samples/basic/blinky\n$ ninja -C build' },
+    { t: 'Devicetree', io: '.dts + .overlay\n→ devicetree_generated.h', d: '<p><code>cmake/modules/dts.cmake</code> 合併板子的 .dts 與應用程式的 .overlay，經 C 前處理器展開，再由 <code>scripts/dts/gen_defines.py</code> 依 bindings 驗證並產生巨集標頭。</p><p>產物：<code>build/zephyr/zephyr.dts</code>（可直接看合併後結果）。</p>', f: 'app.overlay', l: 'sh', s: '/* 應用程式覆寫：把 LED 改接到 P0.17 */\n&led0 {\n    gpios = <&gpio0 17 GPIO_ACTIVE_LOW>;\n};' },
+    { t: 'Kconfig', io: 'defconfig + prj.conf\n→ .config, autoconf.h', d: '<p><code>cmake/modules/kconfig.cmake</code> 依序合併：SoC 預設 → 板子 <code>_defconfig</code> → 應用程式 <code>prj.conf</code> → 命令列 <code>-DCONFIG_…</code>。</p><p>Devicetree 也會影響預設值，例如板上有 I2C 節點就預設開啟 I2C 驅動。</p>', f: 'prj.conf', l: 'sh', s: '# 開啟需要的功能\nCONFIG_GPIO=y\nCONFIG_LOG=y\nCONFIG_SHELL=y\n# 主執行緒堆疊大小\nCONFIG_MAIN_STACK_SIZE=2048' },
+    { t: '編譯 + 連結', io: 'C 原始碼\n→ libzephyr.a + app.a', d: '<p>CMake 產生 Ninja 規則，只編譯 Kconfig 有開啟的檔案（<code>zephyr_library_sources_ifdef(CONFIG_…)</code>）。</p><p>連結時會做兩階段：先產生初版 ELF 收集 ISR 表、系統呼叫與核心物件資訊，再產出最終映像。</p>', f: 'CMakeLists.txt', l: 'sh', s: 'cmake_minimum_required(VERSION 3.28.0)\nfind_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})\nproject(blinky)\n\ntarget_sources(app PRIVATE src/main.c)' },
+    { t: '產出 + 燒錄', io: 'zephyr.elf / .hex / .bin\n→ west flash', d: '<p><code>build/zephyr/</code> 下得到 <code>zephyr.elf</code>（含除錯符號）、<code>.hex</code>、<code>.bin</code>，以及 ROM/RAM 使用量報告。</p><p><code>west flash</code> 依板子的 <code>board.cmake</code> 選擇 runner（nrfjprog、openocd、jlink、pyocd…）。</p>', f: 'terminal', l: 'sh', s: 'Memory region   Used Size  Region Size  %age Used\n       FLASH:     18432 B         1 MB      1.76%\n         RAM:      5888 B       256 KB      2.25%\n\n$ west flash\n$ west build -t rom_report   # 看誰佔空間' }
+  ];
+  const pipe = $('#pipe');
+  stages.forEach((s, i) => {
+    const b = document.createElement('button');
+    b.className = 'stage';
+    b.innerHTML = `<span class="n">STAGE ${i + 1}</span><span class="t">${s.t}</span><span class="io">${esc(s.io).replace('\n', '<br>')}</span>`;
+    b.addEventListener('click', () => pickStage(i));
+    pipe.appendChild(b);
+  });
+  function pickStage(i) {
+    pipe.querySelectorAll('.stage').forEach((b, j) => { b.classList.toggle('on', i === j); b.setAttribute('aria-pressed', i === j); });
+    const s = stages[i];
+    $('#stageDetail').innerHTML = `<div class="txt">${s.d}</div>${codeBlock(s.f, s.s, s.l)}`;
+  }
+  pickStage(0);
+
+  /* ---------- boot ---------- */
+  const boot = [
+    { f: 'Reset vector', ctx: '組語', w: 'arch/arm/core/cortex_m/reset.S', b: 'CPU 上電，跳到向量表', d: 'CPU 從向量表讀出初始堆疊指標與 reset handler。此時沒有 C 執行環境，只能用組語設定最基本的暫存器、關閉中斷。' },
+    { f: 'z_prep_c()', ctx: 'C, 無核心', w: 'arch/arm/core/cortex_m/prep_c.c', b: '準備 C 執行環境', d: '架構層的 C 程式：清除 .bss、從 Flash 複製 .data 到 RAM、設定向量表位址與 FPU，然後呼叫與架構無關的 <code>z_cstart()</code>。' },
+    { f: 'z_cstart()', ctx: 'kernel', w: 'kernel/init.c', b: '核心入口，跑 EARLY 等級', d: '核心正式接手。先執行 <code>INIT_LEVEL_EARLY</code> 的初始化函式，接著初始化 device 狀態與 SoC 早期設定。' },
+    { f: 'PRE_KERNEL_1 / 2', ctx: 'device init', w: 'z_sys_init_run_level()', b: '時脈、中斷控制器、UART…', d: '依序初始化不需要核心服務的驅動：PRE_KERNEL_1 放時脈、中斷控制器、pinctrl；PRE_KERNEL_2 放系統計時器等。這就是驅動 <code>DEVICE_DT_DEFINE(..., PRE_KERNEL_1, prio, ...)</code> 參數的意義。' },
+    { f: 'switch_to_main_thread()', ctx: 'kernel', w: 'kernel/init.c', b: '建立 main 與 idle 執行緒', d: '<code>prepare_multithreading()</code> 初始化排程器、建立 main 執行緒（入口是 <code>bg_thread_main</code>）與 idle 執行緒，然後呼叫 <code>arch_switch_to_main_thread()</code> 第一次切換上下文。此後系統進入多工狀態。' },
+    { f: 'POST_KERNEL', ctx: 'main thread', w: 'bg_thread_main()', b: '需要核心服務的驅動', d: '在 main 執行緒中執行。這一層的驅動可以使用 semaphore、sleep 等核心功能，例如 I2C 感測器、網路介面。之後印出 <code>*** Booting Zephyr OS build … ***</code> 字樣。' },
+    { f: 'APPLICATION', ctx: 'main thread', w: 'bg_thread_main()', b: '應用層 SYS_INIT 與靜態執行緒', d: '執行 <code>SYS_INIT(fn, APPLICATION, prio)</code> 註冊的初始化函式；啟用 SMP 時跑 SMP 等級並喚醒其他核心；接著啟動所有用 <code>K_THREAD_DEFINE</code> 靜態宣告的執行緒。' },
+    { f: 'main()', ctx: 'prio 0', w: 'your app', b: '你的程式開始執行', d: '終於輪到你的 <code>main()</code>。若 main 回傳，main 執行緒結束，但其他執行緒仍繼續運行；沒有任何事可做時，CPU 進入 idle 執行緒並可進入低功耗狀態。' }
+  ];
+  let bi = 0, timer = null;
+  const bootSteps = $('#bootSteps');
+  boot.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="dot"></span><button type="button"><span class="fnm">${s.f}</span><span class="ctx">${s.ctx}</span><span class="bd">${s.b}</span></button>`;
+    li.querySelector('button').addEventListener('click', () => { stopPlay(); setBoot(i); });
+    bootSteps.appendChild(li);
+  });
+  function setBoot(i) {
+    bi = Math.max(0, Math.min(boot.length - 1, i));
+    [...bootSteps.children].forEach((li, j) => { li.classList.toggle('done', j < bi); li.classList.toggle('on', j === bi); });
+    const s = boot[bi];
+    $('#bootPanel').innerHTML = `<div class="where">步驟 ${bi + 1} / ${boot.length} · ${s.w}</div><h4 style="margin-top:6px">${s.f}</h4><p>${s.d}</p>`;
+  }
+  function stopPlay() { if (timer) { clearInterval(timer); timer = null; $('#bootPlay').textContent = '自動播放'; } }
+  $('#bootPrev').onclick = () => { stopPlay(); setBoot(bi - 1); };
+  $('#bootNext').onclick = () => { stopPlay(); setBoot(bi + 1); };
+  $('#bootPlay').onclick = () => {
+    if (timer) { stopPlay(); return; }
+    if (bi === boot.length - 1) setBoot(0);
+    $('#bootPlay').textContent = '暫停';
+    timer = setInterval(() => { if (bi >= boot.length - 1) { stopPlay(); return; } setBoot(bi + 1); }, 1800);
+  };
+  setBoot(0);
+
+  /* ---------- gantt ---------- */
+  (function () {
+    const svg = $('#gantt'); const NS = 'http://www.w3.org/2000/svg';
+    const X0 = 130, W = 560, T = 10; const sx = t => X0 + t / T * W;
+    const rows = [
+      { n: 'ISR', c: 'var(--copper)' },
+      { n: 'sensor_thread (2)', c: 'var(--accent)' },
+      { n: 'log_thread (7)', c: 'var(--teal)' },
+      { n: 'idle', c: 'var(--idle)' }
+    ];
+    const RH = 40, Y0 = 14;
+    const segs = [
+      [2, 0, 3, 'log_thread 執行中：把 log 寫到 UART'],
+      [0, 3, 3.4, 'ISR：按鈕中斷，呼叫 k_sem_give(&btn_sem)'],
+      [1, 3.4, 6, 'sensor_thread 被喚醒並搶佔 log_thread：讀取感測器，然後再次 k_sem_take() 等待'],
+      [2, 6, 8, 'log_thread 恢復執行（從被打斷處繼續）'],
+      [3, 8, 10, 'idle：沒有就緒執行緒，CPU 可進入低功耗']
+    ];
+    const el = (n, a) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); return e; };
+    for (let t = 0; t <= T; t += 2) {
+      svg.appendChild(el('line', { x1: sx(t), x2: sx(t), y1: Y0, y2: Y0 + RH * 4, stroke: 'var(--line)' }));
+      const tx = el('text', { x: sx(t), y: Y0 + RH * 4 + 18, 'font-size': 12, fill: 'var(--muted)', 'text-anchor': 'middle' }); tx.textContent = t + ' ms'; svg.appendChild(tx);
+    }
+    rows.forEach((r, i) => {
+      const tx = el('text', { x: X0 - 10, y: Y0 + i * RH + RH / 2 + 4, 'font-size': 12.5, fill: 'var(--ink)', 'text-anchor': 'end' }); tx.textContent = r.n; svg.appendChild(tx);
+    });
+    segs.forEach(s => {
+      const [ri, a, b, txt] = s;
+      const r = el('rect', { x: sx(a) + 1, y: Y0 + ri * RH + 9, width: Math.max(sx(b) - sx(a) - 2, 3), height: RH - 18, rx: 4, fill: rows[ri].c });
+      r.style.cursor = 'default';
+      r.addEventListener('mouseenter', e => showTip(e, `<b>${a}–${b} ms</b><br>${txt}`));
+      r.addEventListener('mousemove', moveTip); r.addEventListener('mouseleave', hideTip);
+      svg.appendChild(r);
+    });
+    const ar = (x, y1, y2) => svg.appendChild(el('line', { x1: x, x2: x, y1, y2, stroke: 'var(--ink)', 'stroke-width': 1.5, 'stroke-dasharray': '3 3' }));
+    ar(sx(3), Y0 + RH * 2 + 9, Y0 + 9);
+    const lb = el('text', { x: sx(3.5) + 4, y: Y0 + RH + 6, 'font-size': 11.5, fill: 'var(--muted)' }); lb.textContent = 'k_sem_give → 搶佔'; svg.appendChild(lb);
+  })();
+
+  /* ---------- examples ---------- */
+  const examples = [
+    {
+      tab: '① Hello / Blinky', title: '閃爍 LED：第一個程式', who: 'samples/basic/blinky · 適合：剛拿到開發板的新手',
+      p: '最經典的入門。程式只認得 Devicetree 別名 <code>led0</code>，所以在任何定義了 led0 的板子上都能直接跑。',
+      steps: ['<code>west build -b &lt;你的板子&gt; samples/basic/blinky</code>', '<code>west flash</code>，看到板上 LED 每秒閃一次', '打開序列埠（115200 baud）看到 <code>LED state: ON/OFF</code>'],
+      uses: ['GPIO API', 'Devicetree alias', 'k_msleep'],
+      files: [['prj.conf', 'CONFIG_GPIO=y', 'sh'], ['src/main.c', `#include <zephyr/kernel.h>
+#include <zephyr/drivers/gpio.h>
+
+static const struct gpio_dt_spec led =
+	GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
+
+int main(void)
+{
+	if (!gpio_is_ready_dt(&led)) {
+		return 0;
+	}
+	gpio_pin_configure_dt(&led, GPIO_OUTPUT_ACTIVE);
+
+	while (1) {
+		gpio_pin_toggle_dt(&led);
+		k_msleep(1000);   /* 讓出 CPU 1 秒 */
+	}
+	return 0;
+}`, 'c']]
+    },
+    {
+      tab: '② 感測器 + 多執行緒', title: '溫濕度監測器', who: 'samples/sensor/bme280 · 適合：做 IoT 節點的人',
+      p: '一個執行緒定時讀感測器，透過 message queue 傳給另一個執行緒處理（例如顯示或上傳）。這是 RTOS 最典型的生產者／消費者架構。感測器型號由 Devicetree 指定，換一顆感測器只需改 overlay。',
+      steps: ['在 <code>app.overlay</code> 把 BME280 掛到 I2C 匯流排上', '<code>prj.conf</code> 開啟 I2C 與 SENSOR', '兩個執行緒用 <code>k_msgq</code> 解耦，讀取不會被處理速度拖慢'],
+      uses: ['Sensor API', 'K_THREAD_DEFINE', 'k_msgq', 'I2C'],
+      files: [['app.overlay', `&i2c0 {
+    bme280@76 {
+        compatible = "bosch,bme280";
+        reg = <0x76>;
+    };
+};`, 'sh'], ['prj.conf', 'CONFIG_I2C=y\nCONFIG_SENSOR=y\nCONFIG_CBPRINTF_FP_SUPPORT=y', 'sh'], ['src/main.c', `#include <zephyr/kernel.h>
+#include <zephyr/drivers/sensor.h>
+
+struct reading { int32_t temp_milli_c; };
+K_MSGQ_DEFINE(q, sizeof(struct reading), 8, 4);
+
+static const struct device *const dev =
+	DEVICE_DT_GET_ONE(bosch_bme280);
+
+static void producer(void *a, void *b, void *c)
+{
+	struct sensor_value t;
+	struct reading r;
+
+	while (1) {
+		sensor_sample_fetch(dev);
+		sensor_channel_get(dev, SENSOR_CHAN_AMBIENT_TEMP, &t);
+		r.temp_milli_c = t.val1 * 1000 + t.val2 / 1000;
+		k_msgq_put(&q, &r, K_NO_WAIT);
+		k_sleep(K_SECONDS(2));
+	}
+}
+K_THREAD_DEFINE(prod_id, 1024, producer, NULL, NULL, NULL, 5, 0, 0);
+
+int main(void)
+{
+	struct reading r;
+
+	while (1) {
+		k_msgq_get(&q, &r, K_FOREVER);   /* 阻塞等待 */
+		printk("temp: %d m°C\\n", r.temp_milli_c);
+	}
+	return 0;
+}`, 'c']]
+    },
+    {
+      tab: '③ 藍牙 BLE', title: 'BLE 廣播信標', who: 'samples/bluetooth/beacon · 適合：做穿戴與手機連線產品',
+      p: 'Zephyr 內建完整的藍牙堆疊（subsys/bluetooth），開幾個 Kconfig 選項就能發出 BLE 廣播，手機用 nRF Connect 之類的 App 即可掃到。',
+      steps: ['在支援 BLE 的板子（如 nrf52840dk）編譯', '<code>bt_enable()</code> 啟動藍牙堆疊', '<code>bt_le_adv_start()</code> 開始廣播裝置名稱'],
+      uses: ['Bluetooth Host', 'GAP 廣播', 'Kconfig'],
+      files: [['prj.conf', 'CONFIG_BT=y\nCONFIG_BT_DEVICE_NAME="Zephyr Beacon"', 'sh'], ['src/main.c', `#include <zephyr/kernel.h>
+#include <zephyr/bluetooth/bluetooth.h>
+
+static const struct bt_data ad[] = {
+	BT_DATA_BYTES(BT_DATA_FLAGS, BT_LE_AD_NO_BREDR),
+	BT_DATA(BT_DATA_NAME_COMPLETE, CONFIG_BT_DEVICE_NAME,
+		sizeof(CONFIG_BT_DEVICE_NAME) - 1),
+};
+
+int main(void)
+{
+	int err = bt_enable(NULL);
+
+	if (err != 0) {
+		printk("Bluetooth init failed (%d)\\n", err);
+		return 0;
+	}
+	err = bt_le_adv_start(BT_LE_ADV_NCONN, ad, ARRAY_SIZE(ad),
+			      NULL, 0);
+	printk("Advertising started (%d)\\n", err);
+	return 0;
+}`, 'c']]
+    },
+    {
+      tab: '④ Shell 互動除錯', title: '序列埠指令列', who: 'samples/subsys/shell · 適合：所有開發與產線測試',
+      p: '開啟 Shell 後，透過序列埠就能即時下指令：查看執行緒、堆疊使用率、讀寫 GPIO、掃描 I2C 裝置。也能註冊自己的指令，產線測試非常方便。',
+      steps: ['<code>prj.conf</code> 開啟 SHELL', '連上序列埠，輸入 <code>kernel thread list</code>', '用 <code>SHELL_CMD_REGISTER</code> 加入自訂指令'],
+      uses: ['Shell', 'Logging', '執行期觀測'],
+      files: [['prj.conf', 'CONFIG_SHELL=y\nCONFIG_KERNEL_SHELL=y\nCONFIG_GPIO_SHELL=y\nCONFIG_THREAD_MONITOR=y', 'sh'], ['src/main.c', `#include <zephyr/kernel.h>
+#include <zephyr/shell/shell.h>
+
+static int cmd_hello(const struct shell *sh, size_t argc,
+		     char **argv)
+{
+	shell_print(sh, "Hello from %s", CONFIG_BOARD);
+	return 0;
+}
+SHELL_CMD_REGISTER(hello, NULL, "Say hello", cmd_hello);`, 'c'], ['序列埠畫面', `uart:~$ hello
+Hello from nrf52840dk
+uart:~$ kernel thread list
+ 0x20000418 shell_uart
+	options: 0x0, priority: 14 timeout: 0
+	stack size 2048, unused 1176, usage 872 / 2048 (42 %)`, 'sh']]
+    }
+  ];
+  const tabs = $('#tabs'), panels = $('#exPanels');
+  examples.forEach((ex, i) => {
+    const t = document.createElement('button');
+    t.className = 'tab'; t.setAttribute('role', 'tab'); t.id = 'tab' + i; t.textContent = ex.tab;
+    t.addEventListener('click', () => pickEx(i));
+    tabs.appendChild(t);
+    const p = document.createElement('div');
+    p.className = 'ex'; p.setAttribute('role', 'tabpanel'); p.setAttribute('aria-labelledby', 'tab' + i); p.hidden = true;
+    p.innerHTML = `<div class="story"><h4>${ex.title}</h4><div class="who">${ex.who}</div><p>${ex.p}</p><ul>${ex.steps.map(s => `<li>${s}</li>`).join('')}</ul><div class="uses">${ex.uses.map(u => `<span class="chip">${u}</span>`).join('')}</div></div><div class="codes">${ex.files.map(f => codeBlock(f[0], f[1], f[2])).join('')}</div>`;
+    panels.appendChild(p);
+  });
+  function pickEx(i) {
+    [...tabs.children].forEach((t, j) => t.setAttribute('aria-selected', i === j));
+    [...panels.children].forEach((p, j) => p.hidden = i !== j);
+  }
+  pickEx(0);
+
+  /* ---------- toc highlight ---------- */
+  const links = [...document.querySelectorAll('#toc a')];
+  const secs = links.map(a => document.querySelector(a.getAttribute('href')));
+  function onScroll() {
+    let cur = 0;
+    secs.forEach((s, i) => { if (s.getBoundingClientRect().top < innerHeight * 0.35) cur = i; });
+    links.forEach((a, i) => a.classList.toggle('on', i === cur));
+  }
+  addEventListener('scroll', onScroll, { passive: true }); onScroll();
+})();
+</script>
